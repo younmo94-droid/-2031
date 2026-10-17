@@ -44,8 +44,8 @@
   .fab:active { transform: scale(0.93); }
   .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; z-index: 999; padding: 20px; }
   .modal-overlay.active { display: flex; }
-.modal { background: #fff; border-radius: 20px; padding: 22px 18px; max-width: 420px; width: 100%; max-height: 85vh; overflow-y: auto; }
-  .modal-title { font-size: 17px; font-weight: 700; margin-bottom: 14px; color: #333; }
+  .modal { background: #fff; border-radius: 20px; padding: 22px 18px; max-width: 420px; width: 100%; max-height: 85vh; overflow-y: auto; }
+.modal-title { font-size: 17px; font-weight: 700; margin-bottom: 14px; color: #333; }
   .modal label { display: block; font-size: 12px; color: #666; margin: 10px 0 4px; font-weight: 500; }
   .modal input, .modal textarea { width: 100%; border: 1px solid #d8dde7; border-radius: 10px; padding: 10px 12px; font-size: 14px; font-family: inherit; outline: none; resize: vertical; }
   .modal input:focus, .modal textarea:focus { border-color: #4f7cff; }
@@ -63,3 +63,469 @@
   <h1>📂 우리팀 업무 허브</h1>
   <div class="sub">카테고리를 골라 자유롭게 기록하세요</div>
 </header>
+<div id="mainPage" class="main-wrap">
+  <div class="cat-grid">
+    <div class="cat-card" onclick="openCat('work')">
+      <span class="emoji">📋</span>
+      <div class="name">업무분장표</div>
+      <div class="count" id="count-work">0개 항목</div>
+    </div>
+    <div class="cat-card" onclick="openCat('plan')">
+      <span class="emoji">📄</span>
+      <div class="name">사업별 설명서</div>
+      <div class="count" id="count-plan">0개 항목</div>
+    </div>
+    <div class="cat-card" onclick="openCat('budget')">
+      <span class="emoji">💰</span>
+      <div class="name">사업별 예산현황</div>
+      <div class="count" id="count-budget">0개 항목</div>
+    </div>
+    <div class="cat-card" onclick="openCat('issue')">
+      <span class="emoji">⚠️</span>
+      <div class="name">발생 현안사항</div>
+      <div class="count" id="count-issue">0개 항목</div>
+    </div>
+  </div>
+  <div class="utils">
+    <button class="util-btn" onclick="exportData()">📤 전체 백업 (복사)</button>
+    <button class="util-btn" onclick="importData()">📥 복구 (붙여넣기)</button>
+    <button class="util-btn danger" onclick="resetAll()">🗑️ 전체 초기화</button>
+  </div>
+</div>
+<div id="catPage" class="page">
+  <button class="back-btn" onclick="goHome()">← 메인으로</button>
+  <h2 class="page-title" id="catTitle"></h2>
+  <div class="page-sub" id="catSub"></div>
+  <div id="itemList"></div>
+  <div class="empty" id="emptyHint" style="display:none;">아직 항목이 없어요. <br>오른쪽 아래 + 버튼으로 추가해 보세요.</div>
+  <div class="fab-wrap active"><button class="fab" onclick="addItem()">+</button></div>
+</div>
+<div class="modal-overlay" id="modalOverlay" onclick="closeModal(event)">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-title" id="modalTitle">항목 추가</div>
+    <label>제목</label>
+    <input type="text" id="fTitle" placeholder="예: 10월 사업설명회">
+    <label>내용</label>
+    <textarea id="fBody" placeholder="자세한 내용을 자유롭게 적어주세요"></textarea>
+    <div class="modal-actions">
+      <button class="cancel" onclick="closeModal()">취소</button>
+      <button class="save" onclick="saveItem()">저장</button>
+    </div>
+  </div>
+</div>
+<script>
+const CATS = {
+  work:   { name: '📋 업무분장표',   sub: '팀원별 담당 업무를 정리해요' },
+  plan:   { name: '📄 사업별 설명서', sub: '각 사업의 목적·내용을 기록해요' },
+  budget: { name: '💰 사업별 예산현황', sub: '예산과 집행 내역을 관리해요' },
+  issue:  { name: '⚠️ 발생 현안사항', sub: '해결해야 할 이슈를 추적해요' }
+};
+const STORAGE_KEY = 'teamwork-hub-v1';
+let data = loadData();
+let curCat = null;
+let editingId = null;
+function loadData() {
+  try { const raw = localStorage.getItem(STORAGE_KEY); if (raw) return JSON.parse(raw); } catch(e) {}
+  return { work: [], plan: [], budget: [], issue: [] };
+}
+function saveData() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  updateCounts();
+}
+function updateCounts() {
+  Object.keys(CATS).forEach(k => {
+    const el = document.getElementById('count-' + k);
+if (el) el.textContent = (data[k] || []).length + '개 항목';
+  });
+}
+function openCat(key) {
+  curCat = key;
+  document.getElementById('mainPage').style.display = 'none';
+  document.getElementById('catPage').classList.add('active');
+  document.getElementById('catTitle').textContent = CATS[key].name;
+  document.getElementById('catSub').textContent = CATS[key].sub;
+  renderList();
+  window.scrollTo(0, 0);
+}
+function goHome() {
+  document.getElementById('catPage').classList.remove('active');
+  document.getElementById('mainPage').style.display = 'block';
+  curCat = null;
+  updateCounts();
+}
+function renderList() {
+  const list = data[curCat] || [];
+  const wrap = document.getElementById('itemList');
+  const empty = document.getElementById('emptyHint');
+  wrap.innerHTML = '';
+  if (list.length === 0) { empty.style.display = 'block'; return; }
+  empty.style.display = 'none';
+  list.forEach((it, idx) => {
+    const div = document.createElement('div');
+    div.className = 'item';
+    const bodyHtml = it.body
+      ? `<div class="item-body">${escHtml(it.body)}</div>`
+      : `<div class="item-body empty-text">(내용 없음)</div>`;
+    const isFirst = idx === 0;
+    const isLast = idx === list.length - 1;
+    div.innerHTML = `
+      <div class="item-head">
+        <div class="item-title">${escHtml(it.title || '(제목 없음)')}</div>
+        <div class="item-meta">${it.date || ''}</div>
+      </div>
+      ${bodyHtml}
+      <div class="item-actions">
+        <button class="ia-btn edit" onclick="editItem(${idx})">✏️ 수정</button>
+        ${!isFirst ? `<button class="ia-btn up" onclick="moveItem(${idx},-1)">↑</button>` : ''}
+        ${!isLast ? `<button class="ia-btn down" onclick="moveItem(${idx},1)">↓</button>` : ''}
+        <button class="ia-btn del" onclick="delItem(${idx})">🗑️</button>
+      </div>`;
+    wrap.appendChild(div);
+  });
+}
+function addItem() {
+  editingId = null;
+  document.getElementById('modalTitle').textContent = '항목 추가';
+  document.getElementById('fTitle').value = '';
+  document.getElementById('fBody').value = '';
+  openModal();
+}
+function editItem(idx) {
+  editingId = idx;
+  const it = data[curCat][idx];
+  document.getElementById('modalTitle').textContent = '항목 수정';
+  document.getElementById('fTitle').value = it.title || '';
+  document.getElementById('fBody').value = it.body || '';
+  openModal();
+}
+function saveItem() {
+  const title = document.getElementById('fTitle').value.trim();
+  const body = document.getElementById('fBody').value.trim();
+  if (!title) { showAlert('제목을 입력해 주세요'); return; }
+  const now = new Date();
+  const dateStr = `${now.getFullYear()}.${String(now.getMonth()+1).padStart(2,'0')}.${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+  if (editingId === null) { data[curCat].unshift({ title, body, date: dateStr }); }
+  else { data[curCat][editingId] = { ...data[curCat][editingId], title, body, date: dateStr }; }
+  saveData();
+  renderList();
+  closeModal();
+}
+function delItem(idx) {
+  if (!confirm('삭제할까?')) return;
+  data[curCat].splice(idx, 1);
+  saveData();
+  renderList();
+}
+function moveItem(idx, dir) {
+  const arr = data[curCat];
+  const ni = idx + dir;
+  if (ni < 0 || ni >= arr.length) return;
+  [arr[idx], arr[ni]] = [arr[ni], arr[idx]];
+  saveData();
+  renderList();
+}
+function openModal() { document.getElementById('modalOverlay').classList.add('active'); setTimeout(()=>document.getElementById('fTitle').focus(), 100); }
+function closeModal(e) {
+  if (e && e.target.id !== 'modalOverlay') return;
+  document.getElementById('modalOverlay').classList.remove('active');
+}
+function showAlert(msg) {
+  const m = document.createElement('div');
+  m.className = 'toast';
+  m.textContent = msg;
+  document.body.appendChild(m);
+  setTimeout(() => m.remove(), 1800);
+}
+function exportData() {
+  const txt = JSON.stringify(data, null, 2);
+  const ts = new Date().toISOString().slice(0,10);
+  const header = `우리팀 업무 허브 백업 (${ts})\n`;
+  copyText(header + txt);
+}
+function importData() {
+const txt = prompt('백업 텍스트 붙여넣기');
+  if (!txt) return;
+  const json = txt.replace(/^[^\{\n]*\n/, '').trim();
+  try {
+    const parsed = JSON.parse(json);
+    if (typeof parsed !== 'object') throw new Error('형식 오류');
+    Object.keys(CATS).forEach(k => { if (!Array.isArray(parsed[k])) parsed[k] = []; });
+    data = parsed;
+    saveData();
+    updateCounts();
+    showAlert('✅ 복구 완료!');
+  } catch(e) { showAlert('❌ 복구 실패: 형식이 올바르지 않아요'); }
+}
+function resetAll() {
+  if (!confirm('정말 전체 삭제할까? 되돌릴 수 없어!')) return;
+  if (!confirm('진짜? 한번 더 확인!')) return;
+  data = { work: [], plan: [], budget: [], issue: [] };
+  saveData();
+  updateCounts();
+  showAlert('전체 초기화 완료');
+}
+function copyText(msg) {
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(msg).then(() => showAlert('📋 클립보드에 복사됨!'));
+    return;
+  }
+  const ta = document.createElement('textarea');
+  ta.value = msg;
+  ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0';
+  document.body.appendChild(ta);
+  ta.focus(); ta.select(); ta.setSelectionRange(0, 99999);
+  try {
+    if (document.execCommand('copy')) { showAlert('📋 클립보드에 복사됨!'); }
+    else { prompt('아래 텍스트를 길게 눌러 복사하세요:', msg); }
+  } finally { document.body.removeChild(ta); }
+}
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+updateCounts();
+</script>
+</body>
+</html>
+.modal-title { font-size: 17px; font-weight: 700; margin-bottom: 14px; color: #333; }
+  .modal label { display: block; font-size: 12px; color: #666; margin: 10px 0 4px; font-weight: 500; }
+  .modal input, .modal textarea { width: 100%; border: 1px solid #d8dde7; border-radius: 10px; padding: 10px 12px; font-size: 14px; font-family: inherit; outline: none; resize: vertical; }
+  .modal input:focus, .modal textarea:focus { border-color: #4f7cff; }
+  .modal textarea { min-height: 100px; }
+  .modal-actions { display: flex; gap: 8px; margin-top: 18px; }
+  .modal-actions button { flex: 1; border: none; border-radius: 10px; padding: 12px; font-size: 14px; font-weight: 600; cursor: pointer; }
+  .modal-actions .cancel { background: #f0f3fa; color: #666; }
+  .modal-actions .save { background: #4f7cff; color: #fff; }
+  .empty { text-align: center; color: #aaa; padding: 40px 20px; font-size: 14px; }
+  .toast { position: fixed; top: 30%; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.85); color: #fff; padding: 14px 22px; border-radius: 12px; z-index: 9999; font-size: 14px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>📂 우리팀 업무 허브</h1>
+  <div class="sub">카테고리를 골라 자유롭게 기록하세요</div>
+</header>
+<div id="mainPage" class="main-wrap">
+  <div class="cat-grid">
+    <div class="cat-card" onclick="openCat('work')">
+      <span class="emoji">📋</span>
+      <div class="name">업무분장표</div>
+      <div class="count" id="count-work">0개 항목</div>
+    </div>
+    <div class="cat-card" onclick="openCat('plan')">
+      <span class="emoji">📄</span>
+      <div class="name">사업별 설명서</div>
+      <div class="count" id="count-plan">0개 항목</div>
+    </div>
+    <div class="cat-card" onclick="openCat('budget')">
+      <span class="emoji">💰</span>
+      <div class="name">사업별 예산현황</div>
+      <div class="count" id="count-budget">0개 항목</div>
+    </div>
+    <div class="cat-card" onclick="openCat('issue')">
+      <span class="emoji">⚠️</span>
+      <div class="name">발생 현안사항</div>
+      <div class="count" id="count-issue">0개 항목</div>
+    </div>
+  </div>
+  <div class="utils">
+    <button class="util-btn" onclick="exportData()">📤 전체 백업 (복사)</button>
+    <button class="util-btn" onclick="importData()">📥 복구 (붙여넣기)</button>
+    <button class="util-btn danger" onclick="resetAll()">🗑️ 전체 초기화</button>
+  </div>
+</div>
+<div id="catPage" class="page">
+  <button class="back-btn" onclick="goHome()">← 메인으로</button>
+  <h2 class="page-title" id="catTitle"></h2>
+  <div class="page-sub" id="catSub"></div>
+  <div id="itemList"></div>
+  <div class="empty" id="emptyHint" style="display:none;">아직 항목이 없어요. <br>오른쪽 아래 + 버튼으로 추가해 보세요.</div>
+  <div class="fab-wrap active"><button class="fab" onclick="addItem()">+</button></div>
+</div>
+<div class="modal-overlay" id="modalOverlay" onclick="closeModal(event)">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-title" id="modalTitle">항목 추가</div>
+    <label>제목</label>
+    <input type="text" id="fTitle" placeholder="예: 10월 사업설명회">
+    <label>내용</label>
+    <textarea id="fBody" placeholder="자세한 내용을 자유롭게 적어주세요"></textarea>
+    <div class="modal-actions">
+      <button class="cancel" onclick="closeModal()">취소</button>
+      <button class="save" onclick="saveItem()">저장</button>
+    </div>
+  </div>
+</div>
+<script>
+const CATS = {
+  work:   { name: '📋 업무분장표',   sub: '팀원별 담당 업무를 정리해요' },
+  plan:   { name: '📄 사업별 설명서', sub: '각 사업의 목적·내용을 기록해요' },
+  budget: { name: '💰 사업별 예산현황', sub: '예산과 집행 내역을 관리해요' },
+  issue:  { name: '⚠️ 발생 현안사항', sub: '해결해야 할 이슈를 추적해요' }
+};
+const STORAGE_KEY = 'teamwork-hub-v1';
+let data = loadData();
+let curCat = null;
+let editingId = null;
+function loadData() {
+  try { const raw = localStorage.getItem(STORAGE_KEY); if (raw) return JSON.parse(raw); } catch(e) {}
+  return { work: [], plan: [], budget: [], issue: [] };
+}
+function saveData() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  updateCounts();
+}
+function updateCounts() {
+  Object.keys(CATS).forEach(k => {
+    const el = document.getElementById('count-' + k);
+if (el) el.textContent = (data[k] || []).length + '개 항목';
+  });
+}
+function openCat(key) {
+  curCat = key;
+  document.getElementById('mainPage').style.display = 'none';
+  document.getElementById('catPage').classList.add('active');
+  document.getElementById('catTitle').textContent = CATS[key].name;
+  document.getElementById('catSub').textContent = CATS[key].sub;
+  renderList();
+  window.scrollTo(0, 0);
+}
+function goHome() {
+  document.getElementById('catPage').classList.remove('active');
+  document.getElementById('mainPage').style.display = 'block';
+  curCat = null;
+  updateCounts();
+}
+function renderList() {
+  const list = data[curCat] || [];
+  const wrap = document.getElementById('itemList');
+  const empty = document.getElementById('emptyHint');
+  wrap.innerHTML = '';
+  if (list.length === 0) { empty.style.display = 'block'; return; }
+  empty.style.display = 'none';
+  list.forEach((it, idx) => {
+    const div = document.createElement('div');
+    div.className = 'item';
+    const bodyHtml = it.body
+      ? `<div class="item-body">${escHtml(it.body)}</div>`
+      : `<div class="item-body empty-text">(내용 없음)</div>`;
+    const isFirst = idx === 0;
+    const isLast = idx === list.length - 1;
+    div.innerHTML = `
+      <div class="item-head">
+        <div class="item-title">${escHtml(it.title || '(제목 없음)')}</div>
+        <div class="item-meta">${it.date || ''}</div>
+      </div>
+      ${bodyHtml}
+      <div class="item-actions">
+        <button class="ia-btn edit" onclick="editItem(${idx})">✏️ 수정</button>
+        ${!isFirst ? `<button class="ia-btn up" onclick="moveItem(${idx},-1)">↑</button>` : ''}
+        ${!isLast ? `<button class="ia-btn down" onclick="moveItem(${idx},1)">↓</button>` : ''}
+        <button class="ia-btn del" onclick="delItem(${idx})">🗑️</button>
+      </div>`;
+    wrap.appendChild(div);
+  });
+}
+function addItem() {
+  editingId = null;
+  document.getElementById('modalTitle').textContent = '항목 추가';
+  document.getElementById('fTitle').value = '';
+  document.getElementById('fBody').value = '';
+  openModal();
+}
+function editItem(idx) {
+  editingId = idx;
+  const it = data[curCat][idx];
+  document.getElementById('modalTitle').textContent = '항목 수정';
+  document.getElementById('fTitle').value = it.title || '';
+  document.getElementById('fBody').value = it.body || '';
+  openModal();
+}
+function saveItem() {
+  const title = document.getElementById('fTitle').value.trim();
+  const body = document.getElementById('fBody').value.trim();
+  if (!title) { showAlert('제목을 입력해 주세요'); return; }
+  const now = new Date();
+  const dateStr = `${now.getFullYear()}.${String(now.getMonth()+1).padStart(2,'0')}.${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+  if (editingId === null) { data[curCat].unshift({ title, body, date: dateStr }); }
+  else { data[curCat][editingId] = { ...data[curCat][editingId], title, body, date: dateStr }; }
+  saveData();
+  renderList();
+  closeModal();
+}
+function delItem(idx) {
+  if (!confirm('삭제할까?')) return;
+  data[curCat].splice(idx, 1);
+  saveData();
+  renderList();
+}
+function moveItem(idx, dir) {
+  const arr = data[curCat];
+  const ni = idx + dir;
+  if (ni < 0 || ni >= arr.length) return;
+  [arr[idx], arr[ni]] = [arr[ni], arr[idx]];
+  saveData();
+  renderList();
+}
+function openModal() { document.getElementById('modalOverlay').classList.add('active'); setTimeout(()=>document.getElementById('fTitle').focus(), 100); }
+function closeModal(e) {
+  if (e && e.target.id !== 'modalOverlay') return;
+  document.getElementById('modalOverlay').classList.remove('active');
+}
+function showAlert(msg) {
+  const m = document.createElement('div');
+  m.className = 'toast';
+  m.textContent = msg;
+  document.body.appendChild(m);
+  setTimeout(() => m.remove(), 1800);
+}
+function exportData() {
+  const txt = JSON.stringify(data, null, 2);
+  const ts = new Date().toISOString().slice(0,10);
+  const header = `우리팀 업무 허브 백업 (${ts})\n`;
+  copyText(header + txt);
+}
+function importData() {
+  const txt = prompt('백업 텍스트 붙여넣기');
+if (!txt) return;
+  const json = txt.replace(/^[^\{\n]*\n/, '').trim();
+  try {
+    const parsed = JSON.parse(json);
+    if (typeof parsed !== 'object') throw new Error('형식 오류');
+    Object.keys(CATS).forEach(k => { if (!Array.isArray(parsed[k])) parsed[k] = []; });
+    data = parsed;
+    saveData();
+    updateCounts();
+    showAlert('✅ 복구 완료!');
+  } catch(e) { showAlert('❌ 복구 실패: 형식이 올바르지 않아요'); }
+}
+function resetAll() {
+  if (!confirm('정말 전체 삭제할까? 되돌릴 수 없어!')) return;
+  if (!confirm('진짜? 한번 더 확인!')) return;
+  data = { work: [], plan: [], budget: [], issue: [] };
+  saveData();
+  updateCounts();
+  showAlert('전체 초기화 완료');
+}
+function copyText(msg) {
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(msg).then(() => showAlert('📋 클립보드에 복사됨!'));
+    return;
+  }
+  const ta = document.createElement('textarea');
+  ta.value = msg;
+  ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0';
+  document.body.appendChild(ta);
+  ta.focus(); ta.select(); ta.setSelectionRange(0, 99999);
+  try {
+    if (document.execCommand('copy')) { showAlert('📋 클립보드에 복사됨!'); }
+    else { prompt('아래 텍스트를 길게 눌러 복사하세요:', msg); }
+  } finally { document.body.removeChild(ta); }
+}
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+updateCounts();
+</script>
+</body>
+</html>
